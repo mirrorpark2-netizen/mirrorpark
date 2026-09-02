@@ -74,7 +74,7 @@ export default function Home() {
   const [copyStatus, setCopyStatus] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [employeePreview, setEmployeePreview] = useState(false);
-  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false); const [adminPassword, setAdminPassword] = useState(''); const [adminLoginStatus, setAdminLoginStatus] = useState('');
   const isAdmin = adminAuthenticated && !employeePreview;
 
   useEffect(() => {
@@ -92,7 +92,7 @@ export default function Home() {
     if (savedTypes) { try { setMechanicTypes(JSON.parse(savedTypes)); } catch { /* retain default hierarchy */ } }
     if (savedApplications) { try { setApplications(JSON.parse(savedApplications)); } catch { /* retain empty queue */ } }
     if (savedInvoices) { try { setInvoices(JSON.parse(savedInvoices)); } catch { /* retain demo history */ } }
-    void fetch('/api/recruitment').then(async response => {
+    const savedAdminPassword = window.sessionStorage.getItem('mp-admin-password') || ''; if (savedAdminPassword) setAdminPassword(savedAdminPassword); void fetch('/api/recruitment', { headers: savedAdminPassword ? { 'x-admin-password': savedAdminPassword } : undefined }).then(async response => {
       if (!response.ok) { setAdminAuthenticated(false); return; }
       const data = await response.json() as { applications?: Applicant[]; employees?: Employee[] };
       setAdminAuthenticated(true);
@@ -151,7 +151,7 @@ export default function Home() {
     setCopyStatus(`${id} saved and copied to clipboard.`);
   };
 
-  const resetInvoice = () => { setItems({}); setCustomer(''); setDiscount(0); setLaborName(''); setLaborPrice(0); setCopyStatus(''); };
+  const resetInvoice = () => { setItems({}); setCustomer(''); setDiscount(0); setLaborName(''); setLaborPrice(0); setCopyStatus(''); }; const authenticateAdmin = async () => { if (!adminPassword.trim()) { setAdminLoginStatus('Enter the administrator password.'); return; } const response = await fetch('/api/recruitment', { headers: { 'x-admin-password': adminPassword } }).catch(() => null); if (!response?.ok) { setAdminAuthenticated(false); setAdminLoginStatus('Incorrect administrator password.'); return; } const data = await response.json() as { applications?: Applicant[]; employees?: Employee[] }; window.sessionStorage.setItem('mp-admin-password', adminPassword); if (data.applications) setApplications(data.applications); if (data.employees?.length) setStaff(data.employees); setAdminAuthenticated(true); setAdminLoginStatus('Administrator access unlocked.'); setView('Admin Controls'); }; const adminRequestHeaders = { 'content-type': 'application/json', 'x-admin-password': adminPassword };
   const saveAdminSettings = () => {
     window.localStorage.setItem('mp-admin-message', adminMessage);
     window.localStorage.setItem('mp-service-catalog', JSON.stringify(catalog));
@@ -174,7 +174,7 @@ export default function Home() {
   };
 
   const acceptApplication = async (application: Applicant) => {
-    const response = await fetch('/api/recruitment', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'accept', id: application.id, role: application.assignedRole }) });
+    const response = await fetch('/api/recruitment', { method: 'PATCH', headers: adminRequestHeaders, body: JSON.stringify({ action: 'accept', id: application.id, role: application.assignedRole }) });
     if (!response.ok) { setCopyStatus('Could not approve this application.'); return; }
     const employee: Employee = { name: application.gameName, role: application.assignedRole, week: '0h 00m', month: '0h 00m', status: 'Off duty', initials: application.gameName.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'NE', invoices: 0, discord: application.discord, gameId: application.gameId, mobile: application.mobile, cid: application.cid };
     const nextStaff = [...staff, employee]; const nextApplications = applications.filter(item => item.id !== application.id);
@@ -182,7 +182,7 @@ export default function Home() {
     window.localStorage.setItem('mp-employees', JSON.stringify(nextStaff)); window.localStorage.setItem('mp-applications', JSON.stringify(nextApplications));
   };
 
-  const rejectApplication = async (id: string) => { const response = await fetch('/api/recruitment', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'reject', id }) }); if (!response.ok) return; const next = applications.filter(item => item.id !== id); setApplications(next); window.localStorage.setItem('mp-applications', JSON.stringify(next)); };
+  const rejectApplication = async (id: string) => { const response = await fetch('/api/recruitment', { method: 'PATCH', headers: adminRequestHeaders, body: JSON.stringify({ action: 'reject', id }) }); if (!response.ok) return; const next = applications.filter(item => item.id !== id); setApplications(next); window.localStorage.setItem('mp-applications', JSON.stringify(next)); };
 
   const navigation: { label: View; icon: typeof LayoutDashboard; admin?: boolean }[] = [
     { label: 'Dashboard', icon: LayoutDashboard }, { label: 'Time Clock', icon: Clock3 }, { label: 'New Invoice', icon: ReceiptText },
@@ -233,7 +233,7 @@ export default function Home() {
           </div>
         </>}
 
-        {view === 'Admin Controls' && !isAdmin && <Panel className="mx-auto max-w-lg p-8 text-center"><ShieldCheck className="mx-auto text-[#ef8490]" /><h1 className="mt-4 text-xl font-black text-white">Administrator access required</h1><p className="mt-2 text-sm text-[#7897a4]">Management controls are hidden from employee accounts.</p></Panel>}
+        {view === 'Admin Controls' && !isAdmin && <Panel className="mx-auto max-w-lg p-8 text-center"><ShieldCheck className="mx-auto text-[#ef8490]" /><h1 className="mt-4 text-xl font-black text-white">Administrator access required</h1><p className="mt-2 text-sm text-[#7897a4]">Management controls are hidden from employee accounts.</p><input type="password" value={adminPassword} onChange={event => setAdminPassword(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void authenticateAdmin(); }} placeholder="Administrator password" className="mt-6 w-full rounded-xl border border-[#244b57] bg-[#071219] px-4 py-3 text-sm text-white outline-none focus:border-[#52e0c4]" /><button onClick={() => void authenticateAdmin()} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-3 text-sm font-black uppercase tracking-[.08em] text-[#06221d]"><LogIn size={16} /> Unlock admin controls</button>{adminLoginStatus && <p className={`mt-4 text-xs font-bold ${adminAuthenticated ? 'text-[#52e0c4]' : 'text-[#ef8490]'}`}>{adminLoginStatus}</p>}</Panel>}
       </section>
     </div>
   </main>;
