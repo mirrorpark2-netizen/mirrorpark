@@ -1,4 +1,8 @@
-import postgres from 'postgres';
+import { createRequire } from 'node:module';
+import type postgresType from 'postgres';
+
+const require = createRequire(import.meta.url);
+const postgres = require('postgres') as typeof postgresType;
 
 const databaseUrl = process.env.DATABASE_URL;
 
