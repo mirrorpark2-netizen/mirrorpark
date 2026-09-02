@@ -74,7 +74,8 @@ export default function Home() {
   const [copyStatus, setCopyStatus] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [employeePreview, setEmployeePreview] = useState(false);
-  const isAdmin = !employeePreview;
+  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
+  const isAdmin = adminAuthenticated && !employeePreview;
 
   useEffect(() => {
     const savedMessage = window.localStorage.getItem('mp-admin-message');
@@ -91,6 +92,13 @@ export default function Home() {
     if (savedTypes) { try { setMechanicTypes(JSON.parse(savedTypes)); } catch { /* retain default hierarchy */ } }
     if (savedApplications) { try { setApplications(JSON.parse(savedApplications)); } catch { /* retain empty queue */ } }
     if (savedInvoices) { try { setInvoices(JSON.parse(savedInvoices)); } catch { /* retain demo history */ } }
+    void fetch('/api/recruitment').then(async response => {
+      if (!response.ok) { setAdminAuthenticated(false); return; }
+      const data = await response.json() as { applications?: Applicant[]; employees?: Employee[] };
+      setAdminAuthenticated(true);
+      if (data.applications) setApplications(data.applications);
+      if (data.employees?.length) setStaff(data.employees);
+    }).catch(() => setAdminAuthenticated(window.location.hostname === 'localhost'));
   }, []);
 
   useEffect(() => {
@@ -154,23 +162,27 @@ export default function Home() {
     setCopyStatus('All admin changes saved.');
   };
 
-  const submitApplication = () => {
+  const submitApplication = async () => {
     if (Object.values(applicationForm).some(value => !value.trim())) { setApplicationStatus('Complete all five required fields.'); return; }
-    const application: Applicant = { id: `APP-${Date.now()}`, ...applicationForm, status: 'pending', requestedAt: new Date().toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' }), assignedRole: mechanicTypes.find(type => type.name !== 'Boss')?.name || 'Mechanic' };
-    const next = [application, ...applications];
-    setApplications(next); window.localStorage.setItem('mp-applications', JSON.stringify(next));
+    const response = await fetch('/api/recruitment', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(applicationForm) }).catch(() => null);
+    if (!response?.ok) { setApplicationStatus('Could not submit the application. Please try again.'); return; }
+    const created = await response.json() as { id: string };
+    const application: Applicant = { id: created.id, ...applicationForm, status: 'pending', requestedAt: new Date().toISOString(), assignedRole: mechanicTypes.find(type => type.name !== 'Boss')?.name || 'Mechanic' };
+    if (isAdmin) { const next = [application, ...applications]; setApplications(next); }
     setApplicationForm({ discord: '', gameId: '', gameName: '', mobile: '', cid: '' });
     setApplicationStatus('Application submitted. An admin must approve your account.');
   };
 
-  const acceptApplication = (application: Applicant) => {
+  const acceptApplication = async (application: Applicant) => {
+    const response = await fetch('/api/recruitment', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'accept', id: application.id, role: application.assignedRole }) });
+    if (!response.ok) { setCopyStatus('Could not approve this application.'); return; }
     const employee: Employee = { name: application.gameName, role: application.assignedRole, week: '0h 00m', month: '0h 00m', status: 'Off duty', initials: application.gameName.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'NE', invoices: 0, discord: application.discord, gameId: application.gameId, mobile: application.mobile, cid: application.cid };
     const nextStaff = [...staff, employee]; const nextApplications = applications.filter(item => item.id !== application.id);
     setStaff(nextStaff); setApplications(nextApplications);
     window.localStorage.setItem('mp-employees', JSON.stringify(nextStaff)); window.localStorage.setItem('mp-applications', JSON.stringify(nextApplications));
   };
 
-  const rejectApplication = (id: string) => { const next = applications.filter(item => item.id !== id); setApplications(next); window.localStorage.setItem('mp-applications', JSON.stringify(next)); };
+  const rejectApplication = async (id: string) => { const response = await fetch('/api/recruitment', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'reject', id }) }); if (!response.ok) return; const next = applications.filter(item => item.id !== id); setApplications(next); window.localStorage.setItem('mp-applications', JSON.stringify(next)); };
 
   const navigation: { label: View; icon: typeof LayoutDashboard; admin?: boolean }[] = [
     { label: 'Dashboard', icon: LayoutDashboard }, { label: 'Time Clock', icon: Clock3 }, { label: 'New Invoice', icon: ReceiptText },
