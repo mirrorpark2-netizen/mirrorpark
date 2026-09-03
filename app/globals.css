@@ -2,9 +2,58 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
-:root { --background: #061016; --foreground: #d8e5e9; --card: #0b1820; --card-foreground: #d8e5e9; --popover: #0b1820; --popover-foreground: #d8e5e9; --primary: #52e0c4; --primary-foreground: #06221d; --secondary: #102a33; --secondary-foreground: #d8e5e9; --muted: #102a33; --muted-foreground: #7897a4; --accent: #15333d; --accent-foreground: #d8e5e9; --destructive: #ef6b73; --border: #1e3d48; --input: #244b57; --ring: #52e0c4; --radius: .8rem; }
-* { border-color: var(--border); }
-html { background: var(--background); }
-body { margin: 0; background: var(--background); color: var(--foreground); font-family: Arial, Helvetica, sans-serif; }
-button { cursor: pointer; }
-input, select { font: inherit; }
+:root {
+  --background: #061016;
+  --foreground: #d8e5e9;
+  --card: #0b1820;
+  --card-foreground: #d8e5e9;
+  --popover: #0b1820;
+  --popover-foreground: #d8e5e9;
+  --primary: #52e0c4;
+  --primary-foreground: #06221d;
+  --secondary: #102a33;
+  --secondary-foreground: #d8e5e9;
+  --muted: #102a33;
+  --muted-foreground: #7897a4;
+  --accent: #15333d;
+  --accent-foreground: #d8e5e9;
+  --action: #ff9f1c;
+  --action-hover: #ffb347;
+  --action-foreground: #211202;
+  --destructive: #ef6b73;
+  --border: #1e3d48;
+  --input: #244b57;
+  --ring: #52e0c4;
+  --radius: 0.8rem;
+}
+* {
+  border-color: var(--border);
+}
+html {
+  background: var(--background);
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+button {
+  cursor: pointer;
+}
+.action-primary {
+  background: var(--action);
+  color: var(--action-foreground);
+  box-shadow: 0 10px 30px rgba(255, 159, 28, 0.16);
+}
+.action-primary:hover {
+  background: var(--action-hover);
+}
+.action-primary:focus-visible {
+  outline: 2px solid var(--action-hover);
+  outline-offset: 3px;
+}
+input,
+select {
+  font: inherit;
+}

@@ -929,7 +929,7 @@ export default function Home() {
         {signedInUser?.employeeId ? (
           <button
             onClick={() => void toggleClock()}
-            className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em] transition ${checkedIn ? 'bg-[#ef6b73] text-[#17080b] hover:bg-[#ff858c]' : 'bg-[#52e0c4] text-[#06221d] hover:bg-[#77ebd4]'}`}
+            className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em] transition ${checkedIn ? 'bg-[#ef6b73] text-[#17080b] hover:bg-[#ff858c]' : 'action-primary'}`}
           >
             {checkedIn ? <LogOut size={17} /> : <LogIn size={17} />}
             {checkedIn ? 'Check out' : 'Check in'}
@@ -1196,7 +1196,7 @@ export default function Home() {
               </label>
               <button
                 onClick={() => void authenticateAdmin()}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.1em] text-[#06221d]"
+                className="action-primary mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-black uppercase tracking-[.1em]"
               >
                 <LogIn size={17} /> Sign In
               </button>
@@ -1256,7 +1256,7 @@ export default function Home() {
               </div>
               <button
                 onClick={() => void submitApplication()}
-                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.1em] text-[#06221d]"
+                className="action-primary mt-5 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-black uppercase tracking-[.1em]"
               >
                 <UserPlus size={17} /> Submit application
               </button>
@@ -1825,7 +1825,7 @@ export default function Home() {
                   </div>
                   <button
                     onClick={submitInvoice}
-                    className="flex w-full items-center justify-center gap-2 bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.12em] text-[#06221d] hover:bg-[#77ebd4]"
+                    className="action-primary flex w-full items-center justify-center gap-2 px-5 py-4 text-sm font-black uppercase tracking-[.12em]"
                   >
                     <Clipboard size={17} /> Submit & copy invoice
                   </button>
@@ -2039,7 +2039,7 @@ export default function Home() {
                 </div>
                 <button
                   onClick={submitApplication}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.1em] text-[#06221d]"
+                  className="action-primary mt-6 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-4 text-sm font-black uppercase tracking-[.1em]"
                 >
                   <UserPlus size={17} /> Submit for admin approval
                 </button>
@@ -2252,7 +2252,7 @@ export default function Home() {
                           <div className="flex gap-2">
                             <button
                               onClick={() => acceptApplication(application)}
-                              className="rounded-xl bg-[#52e0c4] px-4 py-3 text-xs font-black text-[#06221d]"
+                              className="action-primary rounded-xl px-4 py-3 text-xs font-black"
                             >
                               Accept
                             </button>
@@ -2875,7 +2875,7 @@ export default function Home() {
                   </p>
                   <button
                     onClick={() => void saveAdminSettings()}
-                    className="flex items-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-3 text-sm font-black text-[#06221d]"
+                    className="action-primary flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black"
                   >
                     <Check size={16} /> Save all changes
                   </button>
@@ -2919,7 +2919,7 @@ export default function Home() {
               />
               <button
                 onClick={() => void authenticateAdmin()}
-                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-3 text-sm font-black uppercase tracking-[.08em] text-[#06221d]"
+                className="action-primary mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em]"
               >
                 <LogIn size={16} /> Unlock admin controls
               </button>
