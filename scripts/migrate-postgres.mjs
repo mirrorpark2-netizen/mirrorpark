@@ -2,7 +2,8 @@ import postgres from 'postgres';
 import { createHash } from 'node:crypto';
 
 const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error('DATABASE_URL is required to run database migrations.');
+if (!databaseUrl)
+  throw new Error('DATABASE_URL is required to run database migrations.');
 
 const sql = postgres(databaseUrl, { max: 1, connect_timeout: 20 });
 
@@ -48,10 +49,20 @@ try {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS business_settings (
+      key TEXT PRIMARY KEY,
+      value JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
   const adminUsername = process.env.MP_ADMIN_USERNAME;
   const adminPassword = process.env.MP_ADMIN_PASSWORD;
   if (adminUsername && adminPassword) {
-    const passwordHash = createHash('sha256').update(adminPassword).digest('hex');
+    const passwordHash = createHash('sha256')
+      .update(adminPassword)
+      .digest('hex');
     await sql`
       INSERT INTO admin_users (id, username, password_hash)
       VALUES (1, ${adminUsername}, ${passwordHash})
