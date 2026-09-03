@@ -1,5 +1,9 @@
 import { getAuthenticatedUser } from '../../../lib/auth';
+import { sendDiscordWebhook } from '../../../lib/discord';
 import { sql } from '../../../lib/postgres';
+
+const truncate = (value: string, limit: number) =>
+  value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
 
 export async function GET(request: Request) {
   if (!(await getAuthenticatedUser(request))) {
@@ -49,6 +53,43 @@ export async function POST(request: Request) {
   if (user.employeeId) {
     await sql`UPDATE employees SET invoices = invoices + 1 WHERE id = ${user.employeeId}`;
   }
+  const damage =
+    input.damage && typeof input.damage === 'object'
+      ? (input.damage as { name?: unknown; price?: unknown })
+      : null;
+  const lineText = (input.lines as unknown[])
+    .filter((line): line is string => typeof line === 'string')
+    .join('\n');
+  const discord = await sendDiscordWebhook('invoice', {
+    username: 'Mirror Park Invoices',
+    embeds: [
+      {
+        color: 0xff9f1c,
+        title: `Invoice ${id}`,
+        description:
+          typeof damage?.name === 'string'
+            ? `**${truncate(damage.name, 200)}**`
+            : 'Repair invoice',
+        fields: [
+          {
+            name: 'Customer',
+            value: truncate(input.customer?.trim() || 'Walk-in customer', 1024),
+            inline: true,
+          },
+          { name: 'Mechanic', value: truncate(user.name, 1024), inline: true },
+          { name: 'Total', value: `$${total.toFixed(2)}`, inline: true },
+          {
+            name: 'Services & labor',
+            value: truncate(lineText || 'No line details', 1024),
+          },
+        ],
+        footer: input.message
+          ? { text: truncate(input.message, 2048) }
+          : undefined,
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
   return Response.json(
     {
       invoice: {
@@ -59,6 +100,8 @@ export async function POST(request: Request) {
           timeStyle: 'short',
         }),
       },
+      discordConfigured: discord.configured,
+      discordSent: discord.sent,
     },
     { status: 201 },
   );

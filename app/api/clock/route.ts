@@ -1,5 +1,9 @@
 import { getAuthenticatedUser } from '../../../lib/auth';
+import { sendDiscordWebhook } from '../../../lib/discord';
 import { sql } from '../../../lib/postgres';
+
+const formatMinutes = (minutes: number) =>
+  `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
 
 async function clockState(employeeId: number) {
   const [employee, openShift] = await Promise.all([
@@ -55,6 +59,13 @@ export async function POST(request: Request) {
     );
   }
   const input = (await request.json()) as { action?: string };
+  const beforeState = await clockState(user.employeeId);
+  if (
+    (input.action === 'check-in' && beforeState.checkedIn) ||
+    (input.action === 'check-out' && !beforeState.checkedIn)
+  ) {
+    return Response.json(beforeState);
+  }
   if (input.action === 'check-in') {
     await sql`
       INSERT INTO shifts (employee_id, checked_in_at)
@@ -87,5 +98,40 @@ export async function POST(request: Request) {
   } else {
     return Response.json({ error: 'Invalid clock action.' }, { status: 400 });
   }
-  return Response.json(await clockState(user.employeeId));
+  const state = await clockState(user.employeeId);
+  const checkedIn = input.action === 'check-in';
+  const discord = await sendDiscordWebhook('clock', {
+    username: 'Mirror Park Time Clock',
+    embeds: [
+      {
+        color: checkedIn ? 0x52e0c4 : 0xff9f1c,
+        title: checkedIn ? 'Employee Checked In' : 'Employee Checked Out',
+        fields: [
+          { name: 'Employee', value: user.name, inline: true },
+          { name: 'Role', value: user.role, inline: true },
+          {
+            name: 'Action',
+            value: checkedIn ? 'Check In' : 'Check Out',
+            inline: true,
+          },
+          {
+            name: 'Weekly duty time',
+            value: formatMinutes(state.weekMinutes),
+            inline: true,
+          },
+          {
+            name: 'Monthly duty time',
+            value: formatMinutes(state.monthMinutes),
+            inline: true,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      },
+    ],
+  });
+  return Response.json({
+    ...state,
+    discordConfigured: discord.configured,
+    discordSent: discord.sent,
+  });
 }

@@ -263,6 +263,11 @@ export default function Home() {
   const [weekMinutes, setWeekMinutes] = useState(0);
   const [monthMinutes, setMonthMinutes] = useState(0);
   const [colorTheme, setColorTheme] = useState<'teal' | 'orange'>('teal');
+  const [invoiceWebhook, setInvoiceWebhook] = useState('');
+  const [clockWebhook, setClockWebhook] = useState('');
+  const [invoiceWebhookConfigured, setInvoiceWebhookConfigured] =
+    useState(false);
+  const [clockWebhookConfigured, setClockWebhookConfigured] = useState(false);
   const isAdmin = signedInUser?.kind === 'admin' && !employeePreview;
 
   const loadPrivateData = async (token: string, user: AuthUser) => {
@@ -345,12 +350,23 @@ export default function Home() {
       );
     }
     if (user.kind === 'admin') {
-      const recruitmentResponse = await fetch('/api/recruitment', { headers });
+      const [recruitmentResponse, discordResponse] = await Promise.all([
+        fetch('/api/recruitment', { headers }),
+        fetch('/api/discord', { headers }),
+      ]);
       if (recruitmentResponse.ok) {
         const data = (await recruitmentResponse.json()) as {
           applications?: Applicant[];
         };
         setApplications(data.applications || []);
+      }
+      if (discordResponse.ok) {
+        const data = (await discordResponse.json()) as {
+          invoiceConfigured?: boolean;
+          clockConfigured?: boolean;
+        };
+        setInvoiceWebhookConfigured(Boolean(data.invoiceConfigured));
+        setClockWebhookConfigured(Boolean(data.clockConfigured));
       }
     }
   };
@@ -547,12 +563,22 @@ export default function Home() {
       setCopyStatus('Could not save this invoice. Please sign in again.');
       return;
     }
-    const data = (await response.json()) as { invoice: Invoice };
+    const data = (await response.json()) as {
+      invoice: Invoice;
+      discordConfigured?: boolean;
+      discordSent?: boolean;
+    };
     const invoice = data.invoice;
     const nextInvoices = [invoice, ...invoices];
     setInvoices(nextInvoices);
     await copyText(makeInvoiceText(invoice));
-    setCopyStatus(`${invoice.id} saved and copied to clipboard.`);
+    setCopyStatus(
+      data.discordConfigured
+        ? data.discordSent
+          ? `${invoice.id} saved, copied, and sent to Discord.`
+          : `${invoice.id} saved and copied, but Discord delivery failed.`
+        : `${invoice.id} saved and copied to clipboard.`,
+    );
   };
 
   const resetInvoice = () => {
@@ -613,6 +639,10 @@ export default function Home() {
     setAdminPassword('');
     setNewAdminUsername('');
     setNewAdminPassword('');
+    setInvoiceWebhook('');
+    setClockWebhook('');
+    setInvoiceWebhookConfigured(false);
+    setClockWebhookConfigured(false);
     setStaff([]);
     setInvoices([]);
     setCheckedIn(false);
@@ -665,31 +695,75 @@ export default function Home() {
       JSON.stringify(mechanicTypes),
     );
     window.localStorage.setItem('mp-business-name', businessName);
-    const responses = await Promise.all([
-      fetch('/api/settings', {
-        method: 'PATCH',
-        headers: adminRequestHeaders,
-        body: JSON.stringify({ damageLevels }),
-      }).catch(() => null),
-      ...staff
-        .filter((employee) => employee.id)
-        .map((employee) =>
-          fetch('/api/employees', {
-            method: 'PATCH',
-            headers: adminRequestHeaders,
-            body: JSON.stringify(employee),
-          }).catch(() => null),
-        ),
-    ]);
-    const response = responses[0];
-    const employeesSaved = responses.slice(1).every((item) => item?.ok);
+    const discordUpdates: Record<string, string> = {};
+    if (invoiceWebhook.trim())
+      discordUpdates.invoiceWebhook = invoiceWebhook.trim();
+    if (clockWebhook.trim()) discordUpdates.clockWebhook = clockWebhook.trim();
+    const [settingsResponse, discordResponse, ...employeeResponses] =
+      await Promise.all([
+        fetch('/api/settings', {
+          method: 'PATCH',
+          headers: adminRequestHeaders,
+          body: JSON.stringify({ damageLevels }),
+        }).catch(() => null),
+        fetch('/api/discord', {
+          method: 'PATCH',
+          headers: adminRequestHeaders,
+          body: JSON.stringify(discordUpdates),
+        }).catch(() => null),
+        ...staff
+          .filter((employee) => employee.id)
+          .map((employee) =>
+            fetch('/api/employees', {
+              method: 'PATCH',
+              headers: adminRequestHeaders,
+              body: JSON.stringify(employee),
+            }).catch(() => null),
+          ),
+      ]);
+    const employeesSaved = employeeResponses.every((item) => item?.ok);
+    const discordSaved = Boolean(discordResponse?.ok);
+    if (discordResponse?.ok) {
+      const data = (await discordResponse.json()) as {
+        invoiceConfigured?: boolean;
+        clockConfigured?: boolean;
+      };
+      setInvoiceWebhookConfigured(Boolean(data.invoiceConfigured));
+      setClockWebhookConfigured(Boolean(data.clockConfigured));
+      setInvoiceWebhook('');
+      setClockWebhook('');
+    }
     setCopyStatus(
-      response?.ok && employeesSaved
+      settingsResponse?.ok && discordSaved && employeesSaved
         ? 'All admin changes are live for everyone.'
         : 'Some changes could not be published. Please try again.',
     );
-    if (response?.ok && employeesSaved && signedInUser)
+    if (settingsResponse?.ok && discordSaved && employeesSaved && signedInUser)
       await loadPrivateData(sessionToken, signedInUser);
+  };
+
+  const clearDiscordWebhook = async (kind: 'invoice' | 'clock') => {
+    const response = await fetch('/api/discord', {
+      method: 'PATCH',
+      headers: adminRequestHeaders,
+      body: JSON.stringify({
+        [kind === 'invoice' ? 'invoiceWebhook' : 'clockWebhook']: null,
+      }),
+    }).catch(() => null);
+    if (!response?.ok) {
+      setCopyStatus('Could not remove that Discord webhook.');
+      return;
+    }
+    if (kind === 'invoice') {
+      setInvoiceWebhook('');
+      setInvoiceWebhookConfigured(false);
+    } else {
+      setClockWebhook('');
+      setClockWebhookConfigured(false);
+    }
+    setCopyStatus(
+      `${kind === 'invoice' ? 'Invoice' : 'Time Clock'} Discord webhook removed.`,
+    );
   };
 
   const toggleClock = async () => {
@@ -716,6 +790,8 @@ export default function Home() {
       checkedInAt?: string | null;
       weekMinutes: number;
       monthMinutes: number;
+      discordConfigured?: boolean;
+      discordSent?: boolean;
     };
     setCheckedIn(data.checkedIn);
     setSeconds(
@@ -731,6 +807,13 @@ export default function Home() {
     setWeekMinutes(data.weekMinutes);
     setMonthMinutes(data.monthMinutes);
     await loadPrivateData(sessionToken, signedInUser);
+    if (data.discordConfigured) {
+      setCopyStatus(
+        data.discordSent
+          ? `Check ${data.checkedIn ? 'in' : 'out'} report sent to Discord.`
+          : 'Clock updated, but Discord delivery failed.',
+      );
+    }
   };
 
   const addEmployee = async () => {
@@ -2889,7 +2972,7 @@ export default function Home() {
                         'Add or change crew photos',
                         'Review every shift and invoice',
                         'Change roles and duty status',
-                        'Configure the Discord bot',
+                        'Configure secure Discord webhooks',
                       ].map((permission) => (
                         <div
                           key={permission}
@@ -2909,17 +2992,93 @@ export default function Home() {
                           Discord integration
                         </p>
                         <p className="mt-1 text-xs text-[#7897a4]">
-                          Bot credentials and channel mapping can be added
-                          later.
+                          Route invoices and duty actions to separate Discord
+                          channels.
                         </p>
                       </div>
+                    </div>
+                    <div className="mt-5 space-y-4">
+                      <label className="block text-xs font-bold text-[#7897a4]">
+                        <span className="flex items-center justify-between gap-3">
+                          Invoice channel webhook
+                          <span
+                            className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${invoiceWebhookConfigured ? 'bg-[#12342f] text-[#52e0c4]' : 'bg-white/5 text-[#7897a4]'}`}
+                          >
+                            {invoiceWebhookConfigured
+                              ? 'Connected'
+                              : 'Not connected'}
+                          </span>
+                        </span>
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          value={invoiceWebhook}
+                          onChange={(event) =>
+                            setInvoiceWebhook(event.target.value)
+                          }
+                          placeholder={
+                            invoiceWebhookConfigured
+                              ? 'Paste a new webhook to replace it'
+                              : 'Paste Discord invoice channel webhook'
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-3 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                        />
+                      </label>
+                      {invoiceWebhookConfigured && (
+                        <button
+                          type="button"
+                          onClick={() => void clearDiscordWebhook('invoice')}
+                          className="text-xs font-black text-[#ef8490]"
+                        >
+                          Remove invoice webhook
+                        </button>
+                      )}
+                      <label className="block border-t border-[#1e3d48] pt-4 text-xs font-bold text-[#7897a4]">
+                        <span className="flex items-center justify-between gap-3">
+                          Time Clock channel webhook
+                          <span
+                            className={`rounded-full px-2 py-1 text-[9px] font-black uppercase ${clockWebhookConfigured ? 'bg-[#12342f] text-[#52e0c4]' : 'bg-white/5 text-[#7897a4]'}`}
+                          >
+                            {clockWebhookConfigured
+                              ? 'Connected'
+                              : 'Not connected'}
+                          </span>
+                        </span>
+                        <input
+                          type="password"
+                          autoComplete="off"
+                          value={clockWebhook}
+                          onChange={(event) =>
+                            setClockWebhook(event.target.value)
+                          }
+                          placeholder={
+                            clockWebhookConfigured
+                              ? 'Paste a new webhook to replace it'
+                              : 'Paste Discord Time Clock channel webhook'
+                          }
+                          className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-3 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                        />
+                      </label>
+                      {clockWebhookConfigured && (
+                        <button
+                          type="button"
+                          onClick={() => void clearDiscordWebhook('clock')}
+                          className="text-xs font-black text-[#ef8490]"
+                        >
+                          Remove Time Clock webhook
+                        </button>
+                      )}
+                      <p className="rounded-xl bg-[#0f252e] p-3 text-[11px] leading-5 text-[#91aab3]">
+                        Webhook addresses are hidden after saving and are never
+                        shown to employees.
+                      </p>
                     </div>
                   </Panel>
                 </div>
                 <div className="sticky bottom-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#2a5663] bg-[#0d222b]/95 p-4 shadow-2xl backdrop-blur">
                   <p className="text-xs text-[#91aab3]">
-                    Save local business settings and publish damage options for
-                    every user.
+                    Save business settings, employee changes and Discord channel
+                    routing for every user.
                   </p>
                   <button
                     onClick={() => void saveAdminSettings()}
