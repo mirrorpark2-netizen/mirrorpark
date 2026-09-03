@@ -48,6 +48,7 @@ type Invoice = {
   lines: string[];
   message: string;
   damage?: DamageLevel;
+  mechanicName?: string;
 };
 type Service = {
   id: string;
@@ -57,6 +58,7 @@ type Service = {
   icon: string;
 };
 type Employee = {
+  id?: number;
   name: string;
   role: string;
   week: string;
@@ -68,6 +70,14 @@ type Employee = {
   gameId?: string;
   mobile?: string;
   cid?: string;
+  loginPassword?: string;
+};
+type AuthUser = {
+  kind: 'admin' | 'employee';
+  employeeId: number | null;
+  name: string;
+  role: string;
+  initials: string;
 };
 type MechanicType = { id: string; name: string; level: number };
 type Applicant = {
@@ -173,43 +183,19 @@ const defaultMechanicTypes: MechanicType[] = [
   { id: 'apprentice', name: 'Apprentice', level: 7 },
 ];
 
-const seedInvoices: Invoice[] = [
-  {
-    id: 'MP-1846',
-    customer: 'J. Hernandez',
-    date: '02 Sep 2026, 20:42',
-    total: 860,
-    lines: [
-      '2× Door — $200',
-      '1× Window — $60',
-      'Custom labor: Body alignment — $600',
-    ],
-    message: 'Thank you for choosing Mirror Park Mechanics.',
-  },
-  {
-    id: 'MP-1845',
-    customer: 'N. Carter',
-    date: '01 Sep 2026, 23:15',
-    total: 950,
-    lines: ['1× Advance Repair Kit — $700', '1× Tow Service — $250'],
-    message: 'Thank you for choosing Mirror Park Mechanics.',
-  },
-  {
-    id: 'MP-1844',
-    customer: 'S. Price',
-    date: '01 Sep 2026, 19:08',
-    total: 800,
-    lines: ['1× Motor Oil — $700', '1× Door — $100'],
-    message: 'Thank you for choosing Mirror Park Mechanics.',
-  },
-];
-
 const money = (value: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
     currency: 'USD',
     maximumFractionDigits: 0,
   }).format(value);
+
+const formatDutyMinutes = (minutes: number) =>
+  `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, '0')}m`;
+
+const parseDutyMinutes = (value: string) =>
+  Number(value.match(/(\d+)\s*h/i)?.[1] || 0) * 60 +
+  Number(value.match(/(\d+)\s*m/i)?.[1] || 0);
 
 function Panel({
   children,
@@ -240,7 +226,7 @@ export default function Home() {
   const [damageLevels, setDamageLevels] =
     useState<DamageLevel[]>(defaultDamageLevels);
   const [selectedDamageId, setSelectedDamageId] = useState('');
-  const [staff, setStaff] = useState<Employee[]>(defaultEmployees);
+  const [staff, setStaff] = useState<Employee[]>([]);
   const [mechanicTypes, setMechanicTypes] =
     useState<MechanicType[]>(defaultMechanicTypes);
   const [applications, setApplications] = useState<Applicant[]>([]);
@@ -250,13 +236,14 @@ export default function Home() {
     gameName: '',
     mobile: '',
     cid: '',
+    password: '',
   });
   const [applicationStatus, setApplicationStatus] = useState('');
   const [businessName, setBusinessName] = useState('Mirror Park Mechanics');
   const [adminMessage, setAdminMessage] = useState(
     'Thank you for choosing Mirror Park Mechanics. Drive safe and visit us again.',
   );
-  const [invoices, setInvoices] = useState<Invoice[]>(seedInvoices);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [copyStatus, setCopyStatus] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [employeePreview, setEmployeePreview] = useState(false);
@@ -266,16 +253,109 @@ export default function Home() {
   const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [adminLoginStatus, setAdminLoginStatus] = useState('');
-  const isAdmin = adminAuthenticated && !employeePreview;
+  const [authReady, setAuthReady] = useState(false);
+  const [sessionToken, setSessionToken] = useState('');
+  const [signedInUser, setSignedInUser] = useState<AuthUser | null>(null);
+  const [showApplication, setShowApplication] = useState(false);
+  const [weekMinutes, setWeekMinutes] = useState(0);
+  const [monthMinutes, setMonthMinutes] = useState(0);
+  const isAdmin = signedInUser?.kind === 'admin' && !employeePreview;
+
+  const loadPrivateData = async (token: string, user: AuthUser) => {
+    const headers = { authorization: `Bearer ${token}` };
+    const [employeesResponse, invoicesResponse, clockResponse] =
+      await Promise.all([
+        fetch('/api/employees', { headers }),
+        fetch('/api/invoices', { headers }),
+        fetch('/api/clock', { headers }),
+      ]);
+    if (employeesResponse.ok) {
+      const data = (await employeesResponse.json()) as {
+        employees?: Employee[];
+      };
+      let employees = data.employees || [];
+      if (user.kind === 'admin' && employees.length === 0) {
+        const localStaff = window.localStorage.getItem('mp-employees');
+        if (localStaff) {
+          try {
+            const previousEmployees = JSON.parse(localStaff) as Employee[];
+            for (const previous of previousEmployees) {
+              const createdResponse = await fetch('/api/employees', {
+                method: 'POST',
+                headers: {
+                  ...headers,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify(previous),
+              });
+              if (!createdResponse.ok) continue;
+              const created = (await createdResponse.json()) as { id: number };
+              await fetch('/api/employees', {
+                method: 'PATCH',
+                headers: {
+                  ...headers,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify({ ...previous, id: created.id }),
+              });
+            }
+            const refreshed = await fetch('/api/employees', { headers });
+            if (refreshed.ok) {
+              const refreshedData = (await refreshed.json()) as {
+                employees?: Employee[];
+              };
+              employees = refreshedData.employees || [];
+            }
+          } catch {
+            /* ignore invalid legacy employee data */
+          }
+        }
+      }
+      setStaff(employees);
+    }
+    if (invoicesResponse.ok) {
+      const data = (await invoicesResponse.json()) as {
+        invoices?: Invoice[];
+      };
+      setInvoices(data.invoices || []);
+    }
+    if (clockResponse.ok) {
+      const data = (await clockResponse.json()) as {
+        checkedIn?: boolean;
+        checkedInAt?: string | null;
+        weekMinutes?: number;
+        monthMinutes?: number;
+      };
+      setCheckedIn(Boolean(data.checkedIn));
+      setWeekMinutes(Number(data.weekMinutes || 0));
+      setMonthMinutes(Number(data.monthMinutes || 0));
+      setSeconds(
+        data.checkedInAt
+          ? Math.max(
+              0,
+              Math.floor(
+                (Date.now() - new Date(data.checkedInAt).getTime()) / 1000,
+              ),
+            )
+          : 0,
+      );
+    }
+    if (user.kind === 'admin') {
+      const recruitmentResponse = await fetch('/api/recruitment', { headers });
+      if (recruitmentResponse.ok) {
+        const data = (await recruitmentResponse.json()) as {
+          applications?: Applicant[];
+        };
+        setApplications(data.applications || []);
+      }
+    }
+  };
 
   useEffect(() => {
     const savedMessage = window.localStorage.getItem('mp-admin-message');
-    const savedInvoices = window.localStorage.getItem('mp-invoices');
     const savedCatalog = window.localStorage.getItem('mp-service-catalog');
     const savedDamageLevels = window.localStorage.getItem('mp-damage-levels');
-    const savedStaff = window.localStorage.getItem('mp-employees');
     const savedTypes = window.localStorage.getItem('mp-mechanic-types');
-    const savedApplications = window.localStorage.getItem('mp-applications');
     const savedBusinessName = window.localStorage.getItem('mp-business-name');
     if (savedMessage) setAdminMessage(savedMessage);
     if (savedBusinessName) setBusinessName(savedBusinessName);
@@ -293,13 +373,6 @@ export default function Home() {
         /* retain default damage levels */
       }
     }
-    if (savedStaff) {
-      try {
-        setStaff(JSON.parse(savedStaff));
-      } catch {
-        /* retain default employees */
-      }
-    }
     if (savedTypes) {
       try {
         setMechanicTypes(JSON.parse(savedTypes));
@@ -307,26 +380,7 @@ export default function Home() {
         /* retain default hierarchy */
       }
     }
-    if (savedApplications) {
-      try {
-        setApplications(JSON.parse(savedApplications));
-      } catch {
-        /* retain empty queue */
-      }
-    }
-    if (savedInvoices) {
-      try {
-        setInvoices(JSON.parse(savedInvoices));
-      } catch {
-        /* retain demo history */
-      }
-    }
-    const savedAdminUsername =
-      window.sessionStorage.getItem('mp-admin-username') || '';
-    const savedAdminPassword =
-      window.sessionStorage.getItem('mp-admin-password') || '';
-    if (savedAdminUsername) setAdminUsername(savedAdminUsername);
-    if (savedAdminPassword) setAdminPassword(savedAdminPassword);
+    const savedToken = window.sessionStorage.getItem('mp-session-token') || '';
     void fetch('/api/settings')
       .then(async (response) => {
         if (!response.ok) return;
@@ -339,30 +393,24 @@ export default function Home() {
       .catch(() => {
         /* retain locally cached damage levels */
       });
-    void fetch('/api/recruitment', {
-      headers: savedAdminPassword
-        ? {
-            'x-admin-username': savedAdminUsername,
-            'x-admin-password': savedAdminPassword,
-          }
-        : undefined,
+    void fetch('/api/auth', {
+      headers: savedToken ? { authorization: `Bearer ${savedToken}` } : {},
     })
       .then(async (response) => {
         if (!response.ok) {
+          window.sessionStorage.removeItem('mp-session-token');
           setAdminAuthenticated(false);
+          setAuthReady(true);
           return;
         }
-        const data = (await response.json()) as {
-          applications?: Applicant[];
-          employees?: Employee[];
-        };
-        setAdminAuthenticated(true);
-        if (data.applications) setApplications(data.applications);
-        if (data.employees?.length) setStaff(data.employees);
+        const data = (await response.json()) as { user: AuthUser };
+        setSessionToken(savedToken);
+        setSignedInUser(data.user);
+        setAdminAuthenticated(data.user.kind === 'admin');
+        await loadPrivateData(savedToken, data.user);
+        setAuthReady(true);
       })
-      .catch(() =>
-        setAdminAuthenticated(window.location.hostname === 'localhost'),
-      );
+      .catch(() => setAuthReady(true));
   }, []);
 
   useEffect(() => {
@@ -383,8 +431,32 @@ export default function Home() {
     laborPrice + damagePrice,
   );
   const total = Math.max(0, subtotal * (1 - discount / 100));
-  const currentUser = staff[0] || defaultEmployees[0];
+  const currentUser =
+    (signedInUser?.kind === 'employee'
+      ? staff.find((employee) => employee.id === signedInUser.employeeId)
+      : employeePreview
+        ? staff[0]
+        : null) ||
+    (signedInUser
+      ? {
+          name: signedInUser.name,
+          role: signedInUser.role,
+          week: '0h 00m',
+          month: '0h 00m',
+          status: 'Off duty',
+          initials: signedInUser.initials,
+          invoices: 0,
+        }
+      : defaultEmployees[0]);
   const duration = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+  const visibleWeekMinutes =
+    signedInUser?.kind === 'employee'
+      ? weekMinutes
+      : parseDutyMinutes(currentUser.week);
+  const visibleMonthMinutes =
+    signedInUser?.kind === 'employee'
+      ? monthMinutes
+      : parseDutyMinutes(currentUser.month);
   const changeQty = (id: string, change: number) =>
     setItems((previous) => ({
       ...previous,
@@ -396,7 +468,7 @@ export default function Home() {
       businessName.toUpperCase(),
       `INVOICE ${invoice.id}`,
       `Customer: ${invoice.customer}`,
-      `Mechanic: ${currentUser.name}`,
+      `Mechanic: ${invoice.mechanicName || currentUser.name}`,
       `Date: ${invoice.date}`,
       ...(invoice.damage
         ? [
@@ -437,7 +509,6 @@ export default function Home() {
       setCopyStatus('Add at least one item or labor charge.');
       return;
     }
-    const id = `MP-${1847 + invoices.length}`;
     const lines = catalog
       .filter((service) => items[service.id])
       .map(
@@ -449,23 +520,31 @@ export default function Home() {
         `Custom labor: ${laborName.trim() || 'Labor charge'} — ${money(laborPrice)}`,
       );
     if (discount > 0) lines.push(`Discount: ${discount}%`);
-    const invoice: Invoice = {
-      id,
+    const draftInvoice = {
       customer: customer.trim() || 'Walk-in customer',
-      date: new Date().toLocaleString('en-GB', {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }),
       total,
       lines,
       message: adminMessage,
       damage: selectedDamage,
     };
+    const response = await fetch('/api/invoices', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${sessionToken}`,
+      },
+      body: JSON.stringify(draftInvoice),
+    }).catch(() => null);
+    if (!response?.ok) {
+      setCopyStatus('Could not save this invoice. Please sign in again.');
+      return;
+    }
+    const data = (await response.json()) as { invoice: Invoice };
+    const invoice = data.invoice;
     const nextInvoices = [invoice, ...invoices];
     setInvoices(nextInvoices);
-    window.localStorage.setItem('mp-invoices', JSON.stringify(nextInvoices));
     await copyText(makeInvoiceText(invoice));
-    setCopyStatus(`${id} saved and copied to clipboard.`);
+    setCopyStatus(`${invoice.id} saved and copied to clipboard.`);
   };
 
   const resetInvoice = () => {
@@ -482,46 +561,61 @@ export default function Home() {
       setAdminLoginStatus('Enter the administrator username and password.');
       return;
     }
-    const response = await fetch('/api/recruitment', {
-      headers: {
-        'x-admin-username': adminUsername,
-        'x-admin-password': adminPassword,
-      },
+    const response = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        username: adminUsername,
+        password: adminPassword,
+      }),
     }).catch(() => null);
     if (!response?.ok) {
       setAdminAuthenticated(false);
-      setAdminLoginStatus('Incorrect administrator username or password.');
+      const data = (await response?.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      setAdminLoginStatus(data.error || 'Incorrect username or password.');
       return;
     }
     const data = (await response.json()) as {
-      applications?: Applicant[];
-      employees?: Employee[];
+      token: string;
+      user: AuthUser;
     };
-    window.sessionStorage.setItem('mp-admin-username', adminUsername);
-    window.sessionStorage.setItem('mp-admin-password', adminPassword);
-    if (data.applications) setApplications(data.applications);
-    if (data.employees?.length) setStaff(data.employees);
-    setAdminAuthenticated(true);
-    setAdminLoginStatus('Administrator access unlocked.');
-    setView('Admin Controls');
+    window.sessionStorage.setItem('mp-session-token', data.token);
+    setSessionToken(data.token);
+    setSignedInUser(data.user);
+    setAdminAuthenticated(data.user.kind === 'admin');
+    setAdminLoginStatus('Signed in.');
+    await loadPrivateData(data.token, data.user);
+    setView(data.user.kind === 'admin' ? 'Admin Controls' : 'Dashboard');
   };
-  const signOutAdmin = () => {
-    window.sessionStorage.removeItem('mp-admin-username');
-    window.sessionStorage.removeItem('mp-admin-password');
+  const signOutAdmin = async () => {
+    if (sessionToken) {
+      await fetch('/api/auth', {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${sessionToken}` },
+      }).catch(() => null);
+    }
+    window.sessionStorage.removeItem('mp-session-token');
+    setSessionToken('');
+    setSignedInUser(null);
     setAdminAuthenticated(false);
     setEmployeePreview(false);
     setAdminUsername('');
     setAdminPassword('');
     setNewAdminUsername('');
     setNewAdminPassword('');
-    setAdminLoginStatus('Administrator signed out.');
+    setStaff([]);
+    setInvoices([]);
+    setCheckedIn(false);
+    setSeconds(0);
+    setAdminLoginStatus('Signed out.');
     setMenuOpen(false);
-    setView('Admin Controls');
+    setView('Dashboard');
   };
   const adminRequestHeaders = {
     'content-type': 'application/json',
-    'x-admin-username': adminUsername,
-    'x-admin-password': adminPassword,
+    authorization: `Bearer ${sessionToken}`,
   };
   const updateAdminCredentials = async () => {
     const response = await fetch('/api/recruitment', {
@@ -541,13 +635,6 @@ export default function Home() {
       setCopyStatus(data.error || 'Could not update administrator login.');
       return;
     }
-    setAdminUsername(data.username || newAdminUsername);
-    setAdminPassword(newAdminPassword);
-    window.sessionStorage.setItem(
-      'mp-admin-username',
-      data.username || newAdminUsername,
-    );
-    window.sessionStorage.setItem('mp-admin-password', newAdminPassword);
     setNewAdminUsername('');
     setNewAdminPassword('');
     setCopyStatus('Administrator login updated.');
@@ -559,31 +646,116 @@ export default function Home() {
       'mp-damage-levels',
       JSON.stringify(damageLevels),
     );
-    window.localStorage.setItem('mp-employees', JSON.stringify(staff));
     window.localStorage.setItem(
       'mp-mechanic-types',
       JSON.stringify(mechanicTypes),
     );
-    window.localStorage.setItem(
-      'mp-applications',
-      JSON.stringify(applications),
-    );
     window.localStorage.setItem('mp-business-name', businessName);
-    const response = await fetch('/api/settings', {
-      method: 'PATCH',
-      headers: adminRequestHeaders,
-      body: JSON.stringify({ damageLevels }),
-    }).catch(() => null);
+    const responses = await Promise.all([
+      fetch('/api/settings', {
+        method: 'PATCH',
+        headers: adminRequestHeaders,
+        body: JSON.stringify({ damageLevels }),
+      }).catch(() => null),
+      ...staff
+        .filter((employee) => employee.id)
+        .map((employee) =>
+          fetch('/api/employees', {
+            method: 'PATCH',
+            headers: adminRequestHeaders,
+            body: JSON.stringify(employee),
+          }).catch(() => null),
+        ),
+    ]);
+    const response = responses[0];
+    const employeesSaved = responses.slice(1).every((item) => item?.ok);
     setCopyStatus(
-      response?.ok
-        ? 'All admin changes saved. Damage settings are live for everyone.'
-        : 'Other changes saved on this device, but damage settings could not be published.',
+      response?.ok && employeesSaved
+        ? 'All admin changes are live for everyone.'
+        : 'Some changes could not be published. Please try again.',
     );
+    if (response?.ok && employeesSaved && signedInUser)
+      await loadPrivateData(sessionToken, signedInUser);
+  };
+
+  const toggleClock = async () => {
+    if (signedInUser?.kind !== 'employee') {
+      setCopyStatus('Only employee accounts can use the time clock.');
+      return;
+    }
+    const response = await fetch('/api/clock', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${sessionToken}`,
+      },
+      body: JSON.stringify({ action: checkedIn ? 'check-out' : 'check-in' }),
+    });
+    if (!response.ok) {
+      setCopyStatus('Could not update your duty status.');
+      return;
+    }
+    const data = (await response.json()) as {
+      checkedIn: boolean;
+      checkedInAt?: string | null;
+      weekMinutes: number;
+      monthMinutes: number;
+    };
+    setCheckedIn(data.checkedIn);
+    setSeconds(
+      data.checkedInAt
+        ? Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(data.checkedInAt).getTime()) / 1000,
+            ),
+          )
+        : 0,
+    );
+    setWeekMinutes(data.weekMinutes);
+    setMonthMinutes(data.monthMinutes);
+    await loadPrivateData(sessionToken, signedInUser);
+  };
+
+  const addEmployee = async () => {
+    const response = await fetch('/api/employees', {
+      method: 'POST',
+      headers: adminRequestHeaders,
+      body: JSON.stringify({ name: 'New Employee', role: 'Mechanic' }),
+    });
+    if (response.ok && signedInUser)
+      await loadPrivateData(sessionToken, signedInUser);
+  };
+
+  const removeEmployee = async (employee: Employee) => {
+    if (!employee.id) return;
+    const response = await fetch(`/api/employees?id=${employee.id}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${sessionToken}` },
+    });
+    if (response.ok)
+      setStaff((current) => current.filter((item) => item.id !== employee.id));
+  };
+
+  const removeInvoice = async (invoice: Invoice) => {
+    const response = await fetch(
+      `/api/invoices?id=${encodeURIComponent(invoice.id)}`,
+      {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${sessionToken}` },
+      },
+    );
+    if (response.ok) {
+      setInvoices((current) =>
+        current.filter((item) => item.id !== invoice.id),
+      );
+      setCopyStatus(`${invoice.id} removed.`);
+    }
   };
 
   const submitApplication = async () => {
     if (Object.values(applicationForm).some((value) => !value.trim())) {
-      setApplicationStatus('Complete all five required fields.');
+      setApplicationStatus('Complete all six required fields.');
       return;
     }
     const response = await fetch('/api/recruitment', {
@@ -597,25 +769,15 @@ export default function Home() {
       );
       return;
     }
-    const created = (await response.json()) as { id: string };
-    const application: Applicant = {
-      id: created.id,
-      ...applicationForm,
-      status: 'pending',
-      requestedAt: new Date().toISOString(),
-      assignedRole:
-        mechanicTypes.find((type) => type.name !== 'Boss')?.name || 'Mechanic',
-    };
-    if (isAdmin) {
-      const next = [application, ...applications];
-      setApplications(next);
-    }
+    if (isAdmin && signedInUser)
+      await loadPrivateData(sessionToken, signedInUser);
     setApplicationForm({
       discord: '',
       gameId: '',
       gameName: '',
       mobile: '',
       cid: '',
+      password: '',
     });
     setApplicationStatus(
       'Application submitted. An admin must approve your account.',
@@ -636,36 +798,7 @@ export default function Home() {
       setCopyStatus('Could not approve this application.');
       return;
     }
-    const employee: Employee = {
-      name: application.gameName,
-      role: application.assignedRole,
-      week: '0h 00m',
-      month: '0h 00m',
-      status: 'Off duty',
-      initials:
-        application.gameName
-          .split(' ')
-          .map((part) => part[0])
-          .join('')
-          .slice(0, 2)
-          .toUpperCase() || 'NE',
-      invoices: 0,
-      discord: application.discord,
-      gameId: application.gameId,
-      mobile: application.mobile,
-      cid: application.cid,
-    };
-    const nextStaff = [...staff, employee];
-    const nextApplications = applications.filter(
-      (item) => item.id !== application.id,
-    );
-    setStaff(nextStaff);
-    setApplications(nextApplications);
-    window.localStorage.setItem('mp-employees', JSON.stringify(nextStaff));
-    window.localStorage.setItem(
-      'mp-applications',
-      JSON.stringify(nextApplications),
-    );
+    if (signedInUser) await loadPrivateData(sessionToken, signedInUser);
   };
 
   const rejectApplication = async (id: string) => {
@@ -675,9 +808,7 @@ export default function Home() {
       body: JSON.stringify({ action: 'reject', id }),
     });
     if (!response.ok) return;
-    const next = applications.filter((item) => item.id !== id);
-    setApplications(next);
-    window.localStorage.setItem('mp-applications', JSON.stringify(next));
+    setApplications((current) => current.filter((item) => item.id !== id));
   };
 
   const navigation: {
@@ -743,13 +874,19 @@ export default function Home() {
             {duration}
           </p>
         </div>
-        <button
-          onClick={() => setCheckedIn((value) => !value)}
-          className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em] transition ${checkedIn ? 'bg-[#ef6b73] text-[#17080b] hover:bg-[#ff858c]' : 'bg-[#52e0c4] text-[#06221d] hover:bg-[#77ebd4]'}`}
-        >
-          {checkedIn ? <LogOut size={17} /> : <LogIn size={17} />}
-          {checkedIn ? 'Check out' : 'Check in'}
-        </button>
+        {signedInUser?.kind === 'employee' ? (
+          <button
+            onClick={() => void toggleClock()}
+            className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em] transition ${checkedIn ? 'bg-[#ef6b73] text-[#17080b] hover:bg-[#ff858c]' : 'bg-[#52e0c4] text-[#06221d] hover:bg-[#77ebd4]'}`}
+          >
+            {checkedIn ? <LogOut size={17} /> : <LogIn size={17} />}
+            {checkedIn ? 'Check out' : 'Check in'}
+          </button>
+        ) : (
+          <p className="max-w-56 text-right text-xs leading-5 text-[#7897a4]">
+            Sign in as an employee to use the time clock.
+          </p>
+        )}
       </div>
     </Panel>
   );
@@ -916,6 +1053,157 @@ export default function Home() {
     </>
   );
 
+  if (!authReady) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#061017] px-4 text-white">
+        <div className="text-center">
+          <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-[#52e0c4] text-sm font-black text-[#06221d]">
+            MP
+          </span>
+          <p className="mt-4 text-sm font-bold text-[#7897a4]">
+            Loading secure operations…
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (!signedInUser) {
+    return (
+      <main className="min-h-screen bg-[#061017] px-4 py-10 text-[#d7e5e9] sm:py-16">
+        <div className="mx-auto max-w-xl">
+          <div className="mb-8 text-center">
+            <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#52e0c4] text-base font-black text-[#06221d]">
+              MP
+            </span>
+            <h1 className="mt-5 text-3xl font-black text-white">
+              Mirror Park Operations
+            </h1>
+            <p className="mt-2 text-sm text-[#7897a4]">
+              Sign in to access your employee account.
+            </p>
+          </div>
+          {!showApplication ? (
+            <Panel className="p-6 sm:p-8">
+              <div className="flex items-center gap-3 border-b border-[#1e3d48] pb-5">
+                <LogIn className="text-[#52e0c4]" />
+                <div>
+                  <p className="font-black text-white">Sign In</p>
+                  <p className="mt-1 text-xs text-[#7897a4]">
+                    Employees use their Discord Tag and private account
+                    password.
+                  </p>
+                </div>
+              </div>
+              <label className="mt-6 block text-xs font-bold text-[#7897a4]">
+                Username or Discord Tag
+                <input
+                  value={adminUsername}
+                  onChange={(event) => setAdminUsername(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void authenticateAdmin();
+                  }}
+                  autoComplete="username"
+                  className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-4 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                />
+              </label>
+              <label className="mt-4 block text-xs font-bold text-[#7897a4]">
+                Password
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={(event) => setAdminPassword(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void authenticateAdmin();
+                  }}
+                  autoComplete="current-password"
+                  className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-4 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                />
+              </label>
+              <button
+                onClick={() => void authenticateAdmin()}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.1em] text-[#06221d]"
+              >
+                <LogIn size={17} /> Sign In
+              </button>
+              {adminLoginStatus && (
+                <p className="mt-4 rounded-xl bg-[#311b24] p-3 text-center text-xs font-bold text-[#ef8490]">
+                  {adminLoginStatus}
+                </p>
+              )}
+              <button
+                onClick={() => setShowApplication(true)}
+                className="mt-5 w-full text-sm font-bold text-[#52e0c4]"
+              >
+                New employee? Apply for access
+              </button>
+            </Panel>
+          ) : (
+            <Panel className="p-6 sm:p-8">
+              <div className="flex items-center gap-3 border-b border-[#1e3d48] pb-5">
+                <UserPlus className="text-[#52e0c4]" />
+                <div>
+                  <p className="font-black text-white">Employee application</p>
+                  <p className="mt-1 text-xs text-[#7897a4]">
+                    Admin approval is required before you can sign in.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                {[
+                  ['discord', 'Discord Tag'],
+                  ['gameId', 'In Game ID'],
+                  ['gameName', 'In Game Name'],
+                  ['mobile', 'In Game Mobile Number'],
+                  ['cid', 'In Game CID'],
+                  ['password', 'Account Password (8+ characters)'],
+                ].map(([field, label]) => (
+                  <label
+                    key={field}
+                    className={`text-xs font-bold text-[#7897a4] ${field === 'password' ? 'sm:col-span-2' : ''}`}
+                  >
+                    {label}
+                    <input
+                      type={field === 'password' ? 'password' : 'text'}
+                      minLength={field === 'password' ? 8 : undefined}
+                      value={
+                        applicationForm[field as keyof typeof applicationForm]
+                      }
+                      onChange={(event) =>
+                        setApplicationForm((current) => ({
+                          ...current,
+                          [field]: event.target.value,
+                        }))
+                      }
+                      className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-4 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                    />
+                  </label>
+                ))}
+              </div>
+              <button
+                onClick={() => void submitApplication()}
+                className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#52e0c4] px-5 py-4 text-sm font-black uppercase tracking-[.1em] text-[#06221d]"
+              >
+                <UserPlus size={17} /> Submit application
+              </button>
+              {applicationStatus && (
+                <p className="mt-4 text-center text-xs font-bold text-[#52e0c4]">
+                  {applicationStatus}
+                </p>
+              )}
+              <button
+                onClick={() => setShowApplication(false)}
+                className="mt-5 w-full text-sm font-bold text-[#7897a4]"
+              >
+                Back to Sign In
+              </button>
+            </Panel>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-[#061016] text-[#d8e5e9]">
       <header className="sticky top-0 z-40 border-b border-[#18333d] bg-[#061016]/95 backdrop-blur-xl">
@@ -976,7 +1264,7 @@ export default function Home() {
                   {currentUser.name}
                 </span>
                 <span className="block text-[9px] font-black uppercase tracking-[.1em] text-[#52e0c4]">
-                  {employeePreview ? currentUser.role : 'Administrator'}
+                  {isAdmin ? 'Administrator' : currentUser.role}
                 </span>
               </span>
               <ChevronDown size={14} />
@@ -995,8 +1283,7 @@ export default function Home() {
                     {currentUser.name}
                   </p>
                   <p className="mt-1 text-xs text-[#7897a4]">
-                    {currentUser.role} ·{' '}
-                    {employeePreview ? 'Employee' : 'Admin'}
+                    {currentUser.role} · {isAdmin ? 'Admin' : 'Employee'}
                   </p>
                 </div>
                 {adminAuthenticated && (
@@ -1014,25 +1301,25 @@ export default function Home() {
                       : 'Preview employee view'}
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    setView('Admin Controls');
-                    setMenuOpen(false);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs hover:bg-[#102630]"
-                >
-                  <Settings2 size={15} />
-                  Settings
-                </button>
-                {adminAuthenticated && (
+                {isAdmin && (
                   <button
-                    onClick={signOutAdmin}
-                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs text-[#ef8490] hover:bg-[#2a171c]"
+                    onClick={() => {
+                      setView('Admin Controls');
+                      setMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs hover:bg-[#102630]"
                   >
-                    <LogOut size={15} />
-                    Sign out of admin
+                    <Settings2 size={15} />
+                    Settings
                   </button>
                 )}
+                <button
+                  onClick={() => void signOutAdmin()}
+                  className="flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left text-xs text-[#ef8490] hover:bg-[#2a171c]"
+                >
+                  <LogOut size={15} />
+                  Sign out
+                </button>
               </div>
             )}
           </div>
@@ -1111,7 +1398,9 @@ export default function Home() {
                     </span>
                   </div>
                   <div className="mt-6 flex items-end gap-2">
-                    <span className="text-4xl font-black text-white">34.3</span>
+                    <span className="text-4xl font-black text-white">
+                      {(visibleWeekMinutes / 60).toFixed(1)}
+                    </span>
                     <span className="mb-1 text-sm text-[#7897a4]">hours</span>
                   </div>
                   <div className="mt-5 flex h-14 items-end gap-2">
@@ -1201,13 +1490,13 @@ export default function Home() {
                     <div className="rounded-xl bg-[#0f252e] p-4">
                       <p className="text-xs text-[#7897a4]">This week</p>
                       <p className="mt-2 text-2xl font-black text-white">
-                        34h 20m
+                        {formatDutyMinutes(visibleWeekMinutes)}
                       </p>
                     </div>
                     <div className="rounded-xl bg-[#0f252e] p-4">
                       <p className="text-xs text-[#7897a4]">This month</p>
                       <p className="mt-2 text-2xl font-black text-white">
-                        138h 10m
+                        {formatDutyMinutes(visibleMonthMinutes)}
                       </p>
                     </div>
                   </div>
@@ -1375,7 +1664,7 @@ export default function Home() {
                       <div>
                         <p className="font-black text-white">Live invoice</p>
                         <p className="mt-1 text-xs text-[#7897a4]">
-                          Next number · MP-{1847 + invoices.length}
+                          Saved to shared invoice history
                         </p>
                       </div>
                       <FileText className="text-[#52e0c4]" size={20} />
@@ -1523,15 +1812,25 @@ export default function Home() {
                       <p className="font-mono text-lg font-black text-white">
                         {money(invoice.total)}
                       </p>
-                      <button
-                        onClick={async () => {
-                          await copyText(makeInvoiceText(invoice));
-                          setCopyStatus(`${invoice.id} copied to clipboard.`);
-                        }}
-                        className="flex items-center justify-center gap-2 rounded-xl border border-[#2a5663] px-3 py-2 text-xs font-black text-[#b7d1da] hover:bg-[#102a33]"
-                      >
-                        <Clipboard size={14} /> Copy
-                      </button>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            await copyText(makeInvoiceText(invoice));
+                            setCopyStatus(`${invoice.id} copied to clipboard.`);
+                          }}
+                          className="flex items-center justify-center gap-2 rounded-xl border border-[#2a5663] px-3 py-2 text-xs font-black text-[#b7d1da] hover:bg-[#102a33]"
+                        >
+                          <Clipboard size={14} /> Copy
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => void removeInvoice(invoice)}
+                            className="rounded-xl border border-[#64323a] px-3 py-2 text-xs font-black text-[#ef8490] hover:bg-[#2a171c]"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1560,7 +1859,7 @@ export default function Home() {
               {renderHeader(
                 'Employee registration',
                 'Apply to join the garage',
-                'Complete all five in-game identity fields. Your account is created only after an admin approves it and assigns your mechanic type.',
+                'Complete your identity details and choose a private password. Your account is created only after an admin approves it.',
               )}
               <Panel className="mx-auto max-w-3xl p-5 sm:p-7">
                 <div className="flex items-center gap-3 border-b border-[#1e3d48] pb-5">
@@ -1572,7 +1871,7 @@ export default function Home() {
                       New employee application
                     </p>
                     <p className="mt-1 text-xs text-[#7897a4]">
-                      Every field is required for staff verification.
+                      All identity fields and an account password are required.
                     </p>
                   </div>
                 </div>
@@ -1644,6 +1943,22 @@ export default function Home() {
                         }))
                       }
                       placeholder="Character CID"
+                      className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-3 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-[#7897a4] sm:col-span-2">
+                    Account Password
+                    <input
+                      type="password"
+                      minLength={8}
+                      value={applicationForm.password}
+                      onChange={(event) =>
+                        setApplicationForm((current) => ({
+                          ...current,
+                          password: event.target.value,
+                        }))
+                      }
+                      placeholder="At least 8 characters"
                       className="mt-2 w-full rounded-xl border border-[#244b57] bg-[#071219] px-3 py-3 text-sm text-white outline-none focus:border-[#52e0c4]"
                     />
                   </label>
@@ -2188,20 +2503,7 @@ export default function Home() {
                       </div>
                     </div>
                     <button
-                      onClick={() =>
-                        setStaff((current) => [
-                          ...current,
-                          {
-                            name: 'New Employee',
-                            role: 'Mechanic',
-                            week: '0h 00m',
-                            month: '0h 00m',
-                            status: 'Off duty',
-                            initials: 'NE',
-                            invoices: 0,
-                          },
-                        ])
-                      }
+                      onClick={() => void addEmployee()}
                       className="flex items-center gap-2 rounded-xl border border-[#2a5663] px-3 py-2 text-xs font-black text-[#b7d1da]"
                     >
                       <Plus size={14} /> Add employee
@@ -2211,7 +2513,7 @@ export default function Home() {
                     {staff.map((employee, index) => (
                       <div
                         key={`${employee.initials}-${index}`}
-                        className="grid gap-2 rounded-xl border border-[#17323c] bg-[#08141a] p-3 md:grid-cols-2 xl:grid-cols-[1.2fr_1fr_.75fr_.75fr_100px_110px_auto]"
+                        className="grid gap-2 rounded-xl border border-[#17323c] bg-[#08141a] p-3 md:grid-cols-2 xl:grid-cols-4"
                       >
                         <input
                           aria-label="Employee name"
@@ -2250,6 +2552,56 @@ export default function Home() {
                             )
                           }
                           className="rounded-lg border border-[#244b57] bg-[#061016] px-3 py-2 text-sm text-white outline-none"
+                        />
+                        <input
+                          aria-label="Discord Tag sign-in username"
+                          value={employee.discord || ''}
+                          placeholder="Discord Tag (sign-in username)"
+                          onChange={(event) =>
+                            setStaff((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, discord: event.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          className="rounded-lg border border-[#244b57] bg-[#061016] px-3 py-2 text-sm text-white outline-none"
+                        />
+                        <input
+                          aria-label="In Game CID"
+                          value={employee.cid || ''}
+                          placeholder="In Game CID (sign-in password)"
+                          onChange={(event) =>
+                            setStaff((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? { ...item, cid: event.target.value }
+                                  : item,
+                              ),
+                            )
+                          }
+                          className="rounded-lg border border-[#244b57] bg-[#061016] px-3 py-2 text-sm text-white outline-none"
+                        />
+                        <input
+                          type="password"
+                          minLength={8}
+                          aria-label="Set a new employee account password"
+                          value={employee.loginPassword || ''}
+                          placeholder="New password (leave blank to keep)"
+                          onChange={(event) =>
+                            setStaff((current) =>
+                              current.map((item, itemIndex) =>
+                                itemIndex === index
+                                  ? {
+                                      ...item,
+                                      loginPassword: event.target.value,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                          className="rounded-lg border border-[#244b57] bg-[#061016] px-3 py-2 text-sm text-white outline-none xl:col-span-2"
                         />
                         <input
                           aria-label="Weekly hours"
@@ -2320,13 +2672,7 @@ export default function Home() {
                           <option>On leave</option>
                         </select>
                         <button
-                          onClick={() =>
-                            setStaff((current) =>
-                              current.filter(
-                                (_, itemIndex) => itemIndex !== index,
-                              ),
-                            )
-                          }
+                          onClick={() => void removeEmployee(employee)}
                           className="rounded-lg bg-[#311b24] px-3 py-2 text-xs font-black text-[#ef8490]"
                         >
                           Remove
