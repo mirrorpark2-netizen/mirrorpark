@@ -111,11 +111,11 @@ try {
 
   // An administrator is also a staff member so the owner can use the normal
   // clock and invoice workflow without impersonating another employee.
-  const [adminUser] = await sql<Array<{ employeeId: number | null }>>`
+  const [adminUser] = await sql`
     SELECT employee_id AS "employeeId" FROM admin_users WHERE id = 1
   `;
   if (adminUser && !adminUser.employeeId) {
-    const [adminEmployee] = await sql<Array<{ id: number }>>`
+    const [adminEmployee] = await sql`
       INSERT INTO employees (name, role, week, month, week_minutes, month_minutes, status, initials, invoices, discord)
       VALUES ('Administrator', 'Administrator', '0h 00m', '0h 00m', 0, 0, 'Off duty', 'AD', 0, ${adminUsername || 'administrator'})
       RETURNING id
