@@ -29,9 +29,9 @@ export async function POST(request: Request) {
 
   const passwordHash = createHash('sha256').update(password).digest('hex');
   const [databaseAdmin] = await sql<
-    Array<{ username: string; passwordHash: string }>
+    Array<{ username: string; passwordHash: string; employeeId: number | null }>
   >`
-    SELECT username, password_hash AS "passwordHash"
+    SELECT username, password_hash AS "passwordHash", employee_id AS "employeeId"
     FROM admin_users WHERE id = 1
   `;
   const configuredUsername = process.env.MP_ADMIN_USERNAME || 'Uddin';
@@ -83,12 +83,12 @@ export async function POST(request: Request) {
   const token = randomBytes(32).toString('hex');
   await sql`
     INSERT INTO sessions (token_hash, employee_id, is_admin, expires_at)
-    VALUES (${hashToken(token)}, ${employee?.id || null}, ${isAdmin}, NOW() + INTERVAL '7 days')
+    VALUES (${hashToken(token)}, ${isAdmin ? databaseAdmin?.employeeId || null : employee?.id || null}, ${isAdmin}, NOW() + INTERVAL '7 days')
   `;
   const user = isAdmin
     ? {
         kind: 'admin' as const,
-        employeeId: null,
+        employeeId: databaseAdmin?.employeeId ? Number(databaseAdmin.employeeId) : null,
         name: 'Administrator',
         role: 'Administrator',
         initials: 'AD',

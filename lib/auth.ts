@@ -59,10 +59,10 @@ export async function getAuthenticatedUser(
   if (session.isAdmin) {
     return {
       kind: 'admin',
-      employeeId: null,
-      name: 'Administrator',
-      role: 'Administrator',
-      initials: 'AD',
+      employeeId: session.employeeId ? Number(session.employeeId) : null,
+      name: session.name || 'Administrator',
+      role: session.role || 'Administrator',
+      initials: session.initials || 'AD',
     };
   }
   if (!session.employeeId || !session.name) return null;

@@ -432,7 +432,7 @@ export default function Home() {
   );
   const total = Math.max(0, subtotal * (1 - discount / 100));
   const currentUser =
-    (signedInUser?.kind === 'employee'
+    (signedInUser?.employeeId
       ? staff.find((employee) => employee.id === signedInUser.employeeId)
       : employeePreview
         ? staff[0]
@@ -450,11 +450,11 @@ export default function Home() {
       : defaultEmployees[0]);
   const duration = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
   const visibleWeekMinutes =
-    signedInUser?.kind === 'employee'
+    signedInUser?.employeeId
       ? weekMinutes
       : parseDutyMinutes(currentUser.week);
   const visibleMonthMinutes =
-    signedInUser?.kind === 'employee'
+    signedInUser?.employeeId
       ? monthMinutes
       : parseDutyMinutes(currentUser.month);
   const changeQty = (id: string, change: number) =>
@@ -679,8 +679,8 @@ export default function Home() {
   };
 
   const toggleClock = async () => {
-    if (signedInUser?.kind !== 'employee') {
-      setCopyStatus('Only employee accounts can use the time clock.');
+    if (!signedInUser?.employeeId) {
+      setCopyStatus('This account is not connected to an employee profile yet.');
       return;
     }
     const response = await fetch('/api/clock', {
@@ -874,7 +874,7 @@ export default function Home() {
             {duration}
           </p>
         </div>
-        {signedInUser?.kind === 'employee' ? (
+        {signedInUser?.employeeId ? (
           <button
             onClick={() => void toggleClock()}
             className={`flex items-center gap-2 rounded-xl px-5 py-3 text-sm font-black uppercase tracking-[.08em] transition ${checkedIn ? 'bg-[#ef6b73] text-[#17080b] hover:bg-[#ff858c]' : 'bg-[#52e0c4] text-[#06221d] hover:bg-[#77ebd4]'}`}
@@ -884,7 +884,7 @@ export default function Home() {
           </button>
         ) : (
           <p className="max-w-56 text-right text-xs leading-5 text-[#7897a4]">
-            Sign in as an employee to use the time clock.
+            This account is not connected to an employee profile yet.
           </p>
         )}
       </div>
@@ -1990,7 +1990,9 @@ export default function Home() {
               <div className="grid gap-5 md:grid-cols-3">
                 <Panel className="p-6">
                   <Gauge className="text-[#52e0c4]" />
-                  <p className="mt-6 text-3xl font-black text-white">102.6h</p>
+                  <p className="mt-6 text-3xl font-black text-white">
+                    {(staff.reduce((sum, employee) => sum + parseDutyMinutes(employee.week), 0) / 60).toFixed(1)}h
+                  </p>
                   <p className="mt-1 text-xs text-[#7897a4]">
                     Team hours this week
                   </p>
@@ -1998,7 +2000,7 @@ export default function Home() {
                 <Panel className="p-6">
                   <ReceiptText className="text-[#52e0c4]" />
                   <p className="mt-6 text-3xl font-black text-white">
-                    {invoices.length + 244}
+                    {invoices.length}
                   </p>
                   <p className="mt-1 text-xs text-[#7897a4]">
                     Invoices completed
@@ -2011,7 +2013,7 @@ export default function Home() {
                       invoices.reduce(
                         (sum, invoice) => sum + invoice.total,
                         0,
-                      ) + 46820,
+                      ),
                     )}
                   </p>
                   <p className="mt-1 text-xs text-[#7897a4]">

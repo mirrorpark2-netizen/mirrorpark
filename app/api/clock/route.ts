@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user)
     return Response.json({ error: 'Sign in required' }, { status: 401 });
-  if (user.kind !== 'employee' || !user.employeeId) {
+  if (!user.employeeId) {
     return Response.json({
       checkedIn: false,
       checkedInAt: null,
@@ -48,9 +48,9 @@ export async function POST(request: Request) {
   const user = await getAuthenticatedUser(request);
   if (!user)
     return Response.json({ error: 'Sign in required' }, { status: 401 });
-  if (user.kind !== 'employee' || !user.employeeId) {
+  if (!user.employeeId) {
     return Response.json(
-      { error: 'Only employee accounts can use the time clock.' },
+      { error: 'This account is not connected to an employee profile yet.' },
       { status: 403 },
     );
   }

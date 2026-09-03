@@ -53,6 +53,7 @@ try {
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS month_minutes INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`ALTER TABLE applications ADD COLUMN IF NOT EXISTS password_hash TEXT`;
+  await sql`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS employee_id BIGINT REFERENCES employees(id) ON DELETE SET NULL`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -105,6 +106,26 @@ try {
       INSERT INTO admin_users (id, username, password_hash)
       VALUES (1, ${adminUsername}, ${passwordHash})
       ON CONFLICT (id) DO NOTHING
+    `;
+  }
+
+  // An administrator is also a staff member so the owner can use the normal
+  // clock and invoice workflow without impersonating another employee.
+  const [adminUser] = await sql<Array<{ employeeId: number | null }>>`
+    SELECT employee_id AS "employeeId" FROM admin_users WHERE id = 1
+  `;
+  if (adminUser && !adminUser.employeeId) {
+    const [adminEmployee] = await sql<Array<{ id: number }>>`
+      INSERT INTO employees (name, role, week, month, week_minutes, month_minutes, status, initials, invoices, discord)
+      VALUES ('Administrator', 'Administrator', '0h 00m', '0h 00m', 0, 0, 'Off duty', 'AD', 0, ${adminUsername || 'administrator'})
+      RETURNING id
+    `;
+    await sql`
+      UPDATE admin_users SET employee_id = ${adminEmployee.id} WHERE id = 1
+    `;
+    await sql`
+      UPDATE sessions SET employee_id = ${adminEmployee.id}
+      WHERE is_admin = TRUE AND employee_id IS NULL
     `;
   }
 
