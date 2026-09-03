@@ -20,6 +20,7 @@ import {
   LogOut,
   Menu,
   Minus,
+  Palette,
   Plus,
   ReceiptText,
   Settings2,
@@ -261,6 +262,7 @@ export default function Home() {
   const [showApplication, setShowApplication] = useState(false);
   const [weekMinutes, setWeekMinutes] = useState(0);
   const [monthMinutes, setMonthMinutes] = useState(0);
+  const [colorTheme, setColorTheme] = useState<'teal' | 'orange'>('teal');
   const isAdmin = signedInUser?.kind === 'admin' && !employeePreview;
 
   const loadPrivateData = async (token: string, user: AuthUser) => {
@@ -354,6 +356,12 @@ export default function Home() {
   };
 
   useEffect(() => {
+    const savedColorTheme =
+      window.localStorage.getItem('mp-color-theme') === 'orange'
+        ? 'orange'
+        : 'teal';
+    setColorTheme(savedColorTheme);
+    document.documentElement.dataset.colorTheme = savedColorTheme;
     const savedMessage = window.localStorage.getItem('mp-admin-message');
     const savedCatalog = window.localStorage.getItem('mp-service-catalog');
     const savedDamageLevels = window.localStorage.getItem('mp-damage-levels');
@@ -612,6 +620,12 @@ export default function Home() {
     setAdminLoginStatus('Signed out.');
     setMenuOpen(false);
     setView('Dashboard');
+  };
+  const toggleColorTheme = () => {
+    const nextTheme = colorTheme === 'orange' ? 'teal' : 'orange';
+    setColorTheme(nextTheme);
+    window.localStorage.setItem('mp-color-theme', nextTheme);
+    document.documentElement.dataset.colorTheme = nextTheme;
   };
   const adminRequestHeaders = {
     'content-type': 'application/json',
@@ -1145,6 +1159,21 @@ export default function Home() {
   if (!signedInUser) {
     return (
       <main className="min-h-screen bg-[#061017] px-4 py-10 text-[#d7e5e9] sm:py-16">
+        <button
+          type="button"
+          onClick={toggleColorTheme}
+          className="fixed right-4 top-4 z-50 flex items-center gap-2 rounded-xl border border-[#2a5663] bg-[#0b1820] px-3 py-2 text-xs font-black text-white shadow-xl transition hover:-translate-y-0.5"
+          aria-label={`Change interface to ${colorTheme === 'orange' ? 'teal' : 'orange'}`}
+        >
+          <span
+            className="h-3 w-3 rounded-full"
+            style={{
+              backgroundColor: colorTheme === 'orange' ? '#52e0c4' : '#ff9f1c',
+            }}
+          />
+          <Palette size={15} />
+          {colorTheme === 'orange' ? 'Teal UI' : 'Orange UI'}
+        </button>
         <div className="mx-auto max-w-xl">
           <div className="mb-8 text-center">
             <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-[#52e0c4] text-base font-black text-[#06221d]">
@@ -1312,6 +1341,25 @@ export default function Home() {
             ))}
           </nav>
           <div className="relative flex items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleColorTheme}
+              className="flex items-center gap-2 rounded-xl border border-[#2a5663] bg-[#0b1820] p-2.5 text-xs font-black text-white transition hover:-translate-y-0.5"
+              aria-label={`Change interface to ${colorTheme === 'orange' ? 'teal' : 'orange'}`}
+              title={colorTheme === 'orange' ? 'Use teal UI' : 'Use orange UI'}
+            >
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{
+                  backgroundColor:
+                    colorTheme === 'orange' ? '#52e0c4' : '#ff9f1c',
+                }}
+              />
+              <Palette size={16} />
+              <span className="hidden xl:inline">
+                {colorTheme === 'orange' ? 'Teal UI' : 'Orange UI'}
+              </span>
+            </button>
             <button
               onClick={() => {
                 if (isAdmin && applications.length) setView('Admin Controls');

@@ -53,6 +53,101 @@ button {
   outline: 2px solid var(--action-hover);
   outline-offset: 3px;
 }
+
+html[data-color-theme='orange'] {
+  --background: #100b07;
+  --foreground: #f2e7dc;
+  --card: #1a120b;
+  --card-foreground: #f2e7dc;
+  --popover: #1a120b;
+  --popover-foreground: #f2e7dc;
+  --primary: #ff9f1c;
+  --primary-foreground: #211202;
+  --secondary: #2b1d10;
+  --secondary-foreground: #f2e7dc;
+  --muted: #2b1d10;
+  --muted-foreground: #b79b7e;
+  --accent: #3a260f;
+  --accent-foreground: #f2e7dc;
+  --border: #51351a;
+  --input: #6a4219;
+  --ring: #ff9f1c;
+}
+html[data-color-theme='orange'] body,
+html[data-color-theme='orange'] [class*='bg-[#061016]'],
+html[data-color-theme='orange'] [class*='bg-[#061017]'] {
+  background-color: #100b07 !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#071219]'] {
+  background-color: #140e08 !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#08141a]'] {
+  background-color: #181008 !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#0b1820]'] {
+  background-color: #1a120b !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#0c1e26]'],
+html[data-color-theme='orange'] [class*='bg-[#0d222b]'],
+html[data-color-theme='orange'] [class*='bg-[#0f252e]'],
+html[data-color-theme='orange'] [class*='bg-[#102a33]'] {
+  background-color: #2b1d10 !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#12332f]'],
+html[data-color-theme='orange'] [class*='bg-[#15333d]'],
+html[data-color-theme='orange'] [class*='bg-[#173540]'],
+html[data-color-theme='orange'] [class*='bg-[#173a40]'] {
+  background-color: #3a260f !important;
+}
+html[data-color-theme='orange'] [class*='text-[#52e0c4]'] {
+  color: #ff9f1c !important;
+}
+html[data-color-theme='orange'] [class*='text-[#06221d]'] {
+  color: #211202 !important;
+}
+html[data-color-theme='orange'] [class*='text-[#56727e]'] {
+  color: #9b7956 !important;
+}
+html[data-color-theme='orange'] [class*='text-[#688792]'],
+html[data-color-theme='orange'] [class*='text-[#7897a4]'] {
+  color: #b79b7e !important;
+}
+html[data-color-theme='orange'] [class*='text-[#88a3ad]'],
+html[data-color-theme='orange'] [class*='text-[#91aab3]'],
+html[data-color-theme='orange'] [class*='text-[#a8c0c8]'],
+html[data-color-theme='orange'] [class*='text-[#b7d1da]'] {
+  color: #d6c0aa !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#52e0c4]'] {
+  background-color: #ff9f1c !important;
+}
+html[data-color-theme='orange'] [class*='bg-[#52e0c4]/10'] {
+  background-color: rgba(255, 159, 28, 0.12) !important;
+}
+html[data-color-theme='orange'] [class*='border-[#52e0c4]'] {
+  border-color: #ff9f1c !important;
+}
+html[data-color-theme='orange'] [class*='border-[#17323c]'],
+html[data-color-theme='orange'] [class*='border-[#18333d]'],
+html[data-color-theme='orange'] [class*='border-[#1e3d48]'] {
+  border-color: #51351a !important;
+}
+html[data-color-theme='orange'] [class*='border-[#244b57]'],
+html[data-color-theme='orange'] [class*='border-[#2a5663]'],
+html[data-color-theme='orange'] [class*='border-[#2b5966]'] {
+  border-color: #75491c !important;
+}
+html[data-color-theme='orange'] [class*='focus:border-[#52e0c4]']:focus {
+  border-color: #ff9f1c !important;
+}
+html[data-color-theme='orange'] [class*='radial-gradient'] {
+  background-image: radial-gradient(
+    circle at top right,
+    #5c3510,
+    #24170b 55%,
+    #100b07
+  ) !important;
+}
 input,
 select {
   font: inherit;
