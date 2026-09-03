@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { requireAdmin } from '../../../lib/auth';
 import { sql } from '../../../lib/postgres';
 
 type DamageLevel = { id: string; name: string; price: number };
@@ -10,32 +10,6 @@ const defaultDamageLevels: DamageLevel[] = [
   { id: 'severe', name: 'Severe Damage', price: 1050 },
   { id: 'extreme', name: 'Extreme Damage', price: 1200 },
 ];
-
-async function requireAdmin(request: Request) {
-  const suppliedUsername = request.headers.get('x-admin-username');
-  const suppliedPassword = request.headers.get('x-admin-password');
-  const [databaseAdmin] = await sql<
-    Array<{ username: string; passwordHash: string }>
-  >`
-    SELECT username, password_hash AS "passwordHash" FROM admin_users WHERE id = 1
-  `;
-  const passwordHash = suppliedPassword
-    ? createHash('sha256').update(suppliedPassword).digest('hex')
-    : '';
-  if (
-    databaseAdmin &&
-    suppliedUsername === databaseAdmin.username &&
-    passwordHash === databaseAdmin.passwordHash
-  )
-    return true;
-  const configuredUsername = process.env.MP_ADMIN_USERNAME || 'Uddin';
-  const configuredPassword = process.env.MP_ADMIN_PASSWORD;
-  return Boolean(
-    configuredPassword &&
-    suppliedUsername === configuredUsername &&
-    suppliedPassword === configuredPassword,
-  );
-}
 
 function normalizeDamageLevels(value: unknown): DamageLevel[] | null {
   if (!Array.isArray(value) || value.length !== defaultDamageLevels.length)
