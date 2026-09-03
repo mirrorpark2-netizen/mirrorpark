@@ -54,6 +54,7 @@ try {
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`ALTER TABLE applications ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS employee_id BIGINT REFERENCES employees(id) ON DELETE SET NULL`;
+  await sql`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS credential_seed_version TEXT`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS sessions (
@@ -99,13 +100,19 @@ try {
   const adminUsername = process.env.MP_ADMIN_USERNAME;
   const adminPassword = process.env.MP_ADMIN_PASSWORD;
   if (adminUsername && adminPassword) {
+    const credentialSeedVersion = '2026-09-04-admin-reset-v1';
     const passwordHash = createHash('sha256')
       .update(adminPassword)
       .digest('hex');
     await sql`
-      INSERT INTO admin_users (id, username, password_hash)
-      VALUES (1, ${adminUsername}, ${passwordHash})
-      ON CONFLICT (id) DO NOTHING
+      INSERT INTO admin_users (id, username, password_hash, credential_seed_version)
+      VALUES (1, ${adminUsername}, ${passwordHash}, ${credentialSeedVersion})
+      ON CONFLICT (id) DO UPDATE SET
+        username = EXCLUDED.username,
+        password_hash = EXCLUDED.password_hash,
+        credential_seed_version = EXCLUDED.credential_seed_version,
+        updated_at = NOW()
+      WHERE admin_users.credential_seed_version IS DISTINCT FROM ${credentialSeedVersion}
     `;
   }
 
