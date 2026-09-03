@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import {
   BarChart3,
   Bell,
@@ -60,6 +61,7 @@ type Service = {
 type Employee = {
   id?: number;
   name: string;
+  photoUrl?: string;
   role: string;
   week: string;
   month: string;
@@ -449,14 +451,12 @@ export default function Home() {
         }
       : defaultEmployees[0]);
   const duration = `${String(Math.floor(seconds / 3600)).padStart(2, '0')}:${String(Math.floor((seconds % 3600) / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
-  const visibleWeekMinutes =
-    signedInUser?.employeeId
-      ? weekMinutes
-      : parseDutyMinutes(currentUser.week);
-  const visibleMonthMinutes =
-    signedInUser?.employeeId
-      ? monthMinutes
-      : parseDutyMinutes(currentUser.month);
+  const visibleWeekMinutes = signedInUser?.employeeId
+    ? weekMinutes
+    : parseDutyMinutes(currentUser.week);
+  const visibleMonthMinutes = signedInUser?.employeeId
+    ? monthMinutes
+    : parseDutyMinutes(currentUser.month);
   const changeQty = (id: string, change: number) =>
     setItems((previous) => ({
       ...previous,
@@ -680,7 +680,9 @@ export default function Home() {
 
   const toggleClock = async () => {
     if (!signedInUser?.employeeId) {
-      setCopyStatus('This account is not connected to an employee profile yet.');
+      setCopyStatus(
+        'This account is not connected to an employee profile yet.',
+      );
       return;
     }
     const response = await fetch('/api/clock', {
@@ -735,6 +737,56 @@ export default function Home() {
     });
     if (response.ok)
       setStaff((current) => current.filter((item) => item.id !== employee.id));
+  };
+
+  const chooseEmployeePhoto = (index: number, file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setCopyStatus('Please choose a JPG, PNG or WebP image.');
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setCopyStatus('Employee photos must be smaller than 8 MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => setCopyStatus('Could not read that photo.');
+    reader.onload = () => {
+      const image = new window.Image();
+      image.onerror = () => setCopyStatus('Could not prepare that photo.');
+      image.onload = () => {
+        const maximumWidth = 900;
+        const maximumHeight = 700;
+        const scale = Math.min(
+          1,
+          maximumWidth / image.naturalWidth,
+          maximumHeight / image.naturalHeight,
+        );
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        const context = canvas.getContext('2d');
+        if (!context) {
+          setCopyStatus('Could not prepare that photo.');
+          return;
+        }
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const photoUrl = canvas.toDataURL('image/jpeg', 0.8);
+        setStaff((current) =>
+          current.map((employee, employeeIndex) =>
+            employeeIndex === index ? { ...employee, photoUrl } : employee,
+          ),
+        );
+        setCopyStatus('Photo is ready. Select Save all changes to publish it.');
+      };
+      if (typeof reader.result !== 'string') {
+        setCopyStatus('Could not read that photo.');
+        return;
+      }
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   };
 
   const removeInvoice = async (invoice: Invoice) => {
@@ -928,9 +980,20 @@ export default function Home() {
               >
                 <td className="px-5 py-4">
                   <div className="flex items-center gap-3">
-                    <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#15333d] text-xs font-black text-[#52e0c4]">
-                      {employee.initials}
-                    </span>
+                    {employee.photoUrl ? (
+                      <Image
+                        src={employee.photoUrl}
+                        alt=""
+                        width={36}
+                        height={36}
+                        unoptimized
+                        className="h-9 w-9 rounded-xl object-cover"
+                      />
+                    ) : (
+                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-[#15333d] text-xs font-black text-[#52e0c4]">
+                        {employee.initials}
+                      </span>
+                    )}
                     <div>
                       <p className="text-sm font-bold text-white">
                         {employee.name}
@@ -1016,9 +1079,20 @@ export default function Home() {
               className="overflow-hidden"
             >
               <div className="relative grid h-40 place-items-center bg-[radial-gradient(circle_at_top_right,#19444a,#0b1e27_55%,#071219)]">
-                <span className="text-5xl font-black tracking-[-.08em] text-[#52e0c4]/70">
-                  {employee.initials}
-                </span>
+                {employee.photoUrl ? (
+                  <Image
+                    src={employee.photoUrl}
+                    alt={`${employee.name} profile`}
+                    fill
+                    sizes="(min-width: 1280px) 33vw, (min-width: 640px) 50vw, 100vw"
+                    unoptimized
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-5xl font-black tracking-[-.08em] text-[#52e0c4]/70">
+                    {employee.initials}
+                  </span>
+                )}
                 <span
                   className={`absolute left-4 top-4 rounded-lg px-2 py-1 text-[9px] font-black uppercase ${employee.status === 'On duty' ? 'bg-[#52e0c4] text-[#06221d]' : 'bg-[#172f3a] text-[#9ab1b9]'}`}
                 >
@@ -1991,7 +2065,14 @@ export default function Home() {
                 <Panel className="p-6">
                   <Gauge className="text-[#52e0c4]" />
                   <p className="mt-6 text-3xl font-black text-white">
-                    {(staff.reduce((sum, employee) => sum + parseDutyMinutes(employee.week), 0) / 60).toFixed(1)}h
+                    {(
+                      staff.reduce(
+                        (sum, employee) =>
+                          sum + parseDutyMinutes(employee.week),
+                        0,
+                      ) / 60
+                    ).toFixed(1)}
+                    h
                   </p>
                   <p className="mt-1 text-xs text-[#7897a4]">
                     Team hours this week
@@ -2010,10 +2091,7 @@ export default function Home() {
                   <BarChart3 className="text-[#52e0c4]" />
                   <p className="mt-6 text-3xl font-black text-white">
                     {money(
-                      invoices.reduce(
-                        (sum, invoice) => sum + invoice.total,
-                        0,
-                      ),
+                      invoices.reduce((sum, invoice) => sum + invoice.total, 0),
                     )}
                   </p>
                   <p className="mt-1 text-xs text-[#7897a4]">
@@ -2499,8 +2577,8 @@ export default function Home() {
                           Employee management
                         </p>
                         <p className="mt-1 text-xs text-[#7897a4]">
-                          Edit names, roles, hours, invoice totals and duty
-                          status.
+                          Edit photos, names, roles, hours, invoice totals and
+                          duty status.
                         </p>
                       </div>
                     </div>
@@ -2517,6 +2595,63 @@ export default function Home() {
                         key={`${employee.initials}-${index}`}
                         className="grid gap-2 rounded-xl border border-[#17323c] bg-[#08141a] p-3 md:grid-cols-2 xl:grid-cols-4"
                       >
+                        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[#244b57] bg-[#061016] p-2 md:col-span-2 xl:col-span-4">
+                          {employee.photoUrl ? (
+                            <Image
+                              src={employee.photoUrl}
+                              alt={`${employee.name} preview`}
+                              width={80}
+                              height={64}
+                              unoptimized
+                              className="h-16 w-20 rounded-lg object-cover"
+                            />
+                          ) : (
+                            <span className="grid h-16 w-20 place-items-center rounded-lg bg-[#15333d] text-lg font-black text-[#52e0c4]">
+                              {employee.initials}
+                            </span>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-black text-white">
+                              Meet the crew photo
+                            </p>
+                            <p className="mt-1 text-[11px] text-[#7897a4]">
+                              JPG, PNG or WebP. The photo is resized before it
+                              is saved.
+                            </p>
+                          </div>
+                          <label className="cursor-pointer rounded-lg bg-[#173a40] px-3 py-2 text-xs font-black text-[#52e0c4] hover:bg-[#204b52]">
+                            {employee.photoUrl ? 'Change photo' : 'Add photo'}
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp"
+                              className="sr-only"
+                              onChange={(event) => {
+                                chooseEmployeePhoto(
+                                  index,
+                                  event.target.files?.[0] || null,
+                                );
+                                event.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {employee.photoUrl && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setStaff((current) =>
+                                  current.map((item, itemIndex) =>
+                                    itemIndex === index
+                                      ? { ...item, photoUrl: '' }
+                                      : item,
+                                  ),
+                                )
+                              }
+                              className="rounded-lg bg-[#311b24] px-3 py-2 text-xs font-black text-[#ef8490]"
+                            >
+                              Remove photo
+                            </button>
+                          )}
+                        </div>
                         <input
                           aria-label="Employee name"
                           value={employee.name}
@@ -2703,6 +2838,7 @@ export default function Home() {
                         'Change every service price',
                         'Edit business and invoice text',
                         'Add, edit or remove employees',
+                        'Add or change crew photos',
                         'Review every shift and invoice',
                         'Change roles and duty status',
                         'Configure the Discord bot',

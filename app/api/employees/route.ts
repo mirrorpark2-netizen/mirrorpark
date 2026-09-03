@@ -33,11 +33,13 @@ async function listEmployees() {
       gameId: string | null;
       mobile: string | null;
       cid: string | null;
+      photoUrl: string | null;
     }>
   >`
     SELECT id, name, role, week_minutes AS "weekMinutes",
            month_minutes AS "monthMinutes", status, initials, invoices,
-           discord, game_id AS "gameId", mobile, cid
+           discord, game_id AS "gameId", mobile, cid,
+           photo_url AS "photoUrl"
     FROM employees ORDER BY id ASC
   `;
   return rows.map((employee) => ({
@@ -105,6 +107,17 @@ export async function PATCH(request: Request) {
     );
   }
   const passwordHash = password ? hashPassword(password) : null;
+  const photoUrl = textValue(input.photoUrl).trim();
+  if (
+    photoUrl &&
+    (!/^data:image\/(?:jpeg|png|webp);base64,/i.test(photoUrl) ||
+      photoUrl.length > 1_500_000)
+  ) {
+    return Response.json(
+      { error: 'The employee photo is invalid or too large.' },
+      { status: 400 },
+    );
+  }
   await sql`
     UPDATE employees SET
       name = ${name}, role = ${textValue(input.role, 'Mechanic')},
@@ -116,6 +129,7 @@ export async function PATCH(request: Request) {
       game_id = ${textValue(input.gameId).trim() || null},
       mobile = ${textValue(input.mobile).trim() || null},
       cid = ${textValue(input.cid).trim() || null},
+      photo_url = ${photoUrl || null},
       password_hash = CASE WHEN ${passwordHash}::text IS NULL THEN password_hash ELSE ${passwordHash} END
     WHERE id = ${id}
   `;

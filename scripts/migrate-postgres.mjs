@@ -36,6 +36,7 @@ try {
       game_id TEXT,
       mobile TEXT,
       cid TEXT UNIQUE,
+      photo_url TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
@@ -52,6 +53,7 @@ try {
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS week_minutes INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS month_minutes INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS password_hash TEXT`;
+  await sql`ALTER TABLE employees ADD COLUMN IF NOT EXISTS photo_url TEXT`;
   await sql`ALTER TABLE applications ADD COLUMN IF NOT EXISTS password_hash TEXT`;
   await sql`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS employee_id BIGINT REFERENCES employees(id) ON DELETE SET NULL`;
   await sql`ALTER TABLE admin_users ADD COLUMN IF NOT EXISTS credential_seed_version TEXT`;
